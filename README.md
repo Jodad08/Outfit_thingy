@@ -135,6 +135,40 @@ uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
 If the model can't load for any reason, the app logs a warning and silently
 falls back to manual entry — intake never breaks.
 
+## Optional: Pinterest inspiration
+
+Import boards from your Pinterest account as an **inspiration gallery**, then
+**match outfits from your own closet** to the colors of any inspiration pin.
+
+- Uses the **official Pinterest API (v5)** with OAuth — your account, your
+  boards. Pins and tokens are stored **locally**; nothing leaves your machine
+  except the API calls to fetch them.
+- Each imported pin gets a color palette; the recommender can rank real outfits
+  from your wardrobe by how well they echo a pin's palette.
+- You can also **add inspiration photos manually** (works with no API setup).
+
+**Setup:**
+
+1. Create an app at <https://developers.pinterest.com/> and note the
+   **App ID** and **App secret**.
+2. In the app's settings, add a **redirect URI** that exactly matches what the
+   app uses — by default `http://localhost:8000/api/pinterest/callback`
+   (change via `PINTEREST_REDIRECT_URI` if you serve it elsewhere).
+3. Provide the credentials as environment variables and start the app:
+
+   ```bash
+   PINTEREST_CLIENT_ID=xxxx \
+   PINTEREST_CLIENT_SECRET=yyyy \
+   docker compose up -d
+   ```
+
+4. Open the app → **Inspo** tab → **Connect Pinterest**, approve access, then
+   **Load my boards** and **Import** the ones you want. Tap **✨ Match closet**
+   on any pin to see outfits from your wardrobe that fit its palette.
+
+> Pinterest gates production API access; your own account works in the app's
+> **trial** mode, which is all a personal, self-hosted setup needs.
+
 ## Remote access (optional)
 
 This is a single-user, self-hosted app, so keep it on your VM rather than moving
@@ -160,6 +194,9 @@ All settings are environment variables (all optional):
 | `WARDROBE_ENABLE_AUTOTAG` | `0` | Turn on AI auto-tagging (needs vision deps installed) |
 | `WARDROBE_AUTOTAG_MODEL` | `patrickjohncyh/fashion-clip` | Zero-shot model to use |
 | `WARDROBE_MODEL_DIR` | `<data>/models` | Where model weights are cached |
+| `PINTEREST_CLIENT_ID` | _(empty)_ | Pinterest developer app ID (enables import) |
+| `PINTEREST_CLIENT_SECRET` | _(empty)_ | Pinterest developer app secret |
+| `PINTEREST_REDIRECT_URI` | `http://localhost:8000/api/pinterest/callback` | Must match the app's registered redirect URI |
 
 ## Tech stack
 
@@ -184,6 +221,13 @@ Interactive API docs are served at **`/docs`** (Swagger UI). Key endpoints:
 | `POST` | `/api/outfits/{id}/wear` | Wear an outfit (bumps every item) |
 | `GET/PUT` | `/api/preferences` | Style prefs, capsule targets, scoring weights |
 | `GET` | `/api/analytics` | Wardrobe insights |
+| `GET` | `/api/inspiration` | List inspiration images |
+| `POST` | `/api/inspiration/upload` | Manually add an inspiration photo |
+| `POST` | `/api/recommend` (`inspiration_id`) | Match closet outfits to a pin's palette |
+| `GET` | `/api/pinterest/status` | Config/connection status |
+| `GET` | `/api/pinterest/connect` | Start OAuth (redirects to Pinterest) |
+| `GET` | `/api/pinterest/boards` | List your boards |
+| `POST` | `/api/pinterest/boards/{id}/import` | Import a board's pins |
 
 ## Data & privacy
 

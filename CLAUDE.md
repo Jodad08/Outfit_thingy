@@ -29,6 +29,7 @@ backend/app/
   color_utils.py  image save (WebP, EXIF-stripped) + dominant color + harmony
   analytics.py    cost-per-wear, rotation, capsule gaps
   autotag.py      OPTIONAL Fashion-CLIP zero-shot tagging (lazy, CPU)
+  pinterest.py    OPTIONAL Pinterest v5 OAuth + board/pin import (httpx)
   config.py       env-driven config
   database.py     engine/session/init
 frontend/         vanilla HTML/CSS/JS SPA, camera capture, no build step
@@ -52,6 +53,20 @@ Off by default; base app has **no ML deps**. To enable:
 download once to `WARDROBE_MODEL_DIR`. Tagging only *suggests* form values; it
 never writes to the DB. `autotag.py` splits pure scoring logic (unit-testable,
 no ML libs) from the lazy model backend.
+
+## Optional Pinterest inspiration
+
+Off unless `PINTEREST_CLIENT_ID/SECRET` are set (developer app at
+developers.pinterest.com). `pinterest.py` handles the OAuth v5
+authorization-code flow (`/api/pinterest/connect` → Pinterest →
+`/api/pinterest/callback`), stores tokens in the `PinterestAuth` singleton, and
+imports a board's pins into the `Inspiration` table — downloading each image
+locally and extracting a color palette (`color_utils.dominant_palette`).
+Inspiration also supports manual upload (no API needed). "Match closet" calls
+`/api/recommend` with `inspiration_id`, which passes the pin's palette as
+`target_palette` to the recommender; scoring blends an `inspiration` term
+(`recommender.INSPO_WEIGHT`) using `color_utils.palette_match`. Pure color/logic
+is unit-testable; live OAuth/API needs real creds + network.
 
 ## Conventions
 

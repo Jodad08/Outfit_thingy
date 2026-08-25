@@ -12,12 +12,16 @@ from __future__ import annotations
 
 import colorsys
 import io
+import math
 import secrets
 from pathlib import Path
 
 from PIL import Image
 
 from . import config
+
+# Max possible distance in RGB space, used to normalize color similarity.
+_MAX_RGB_DIST = math.sqrt(3 * 255 ** 2)
 
 _BASIC_COLORS: dict[str, tuple[int, int, int]] = {
     "black": (20, 20, 20),
@@ -72,6 +76,27 @@ def save_image(raw: bytes) -> tuple[str, str, str | None]:
     return f"images/{full_name}", f"thumbnails/{thumb_name}", primary
 
 
+def save_inspiration_image(raw: bytes) -> tuple[str, str, str | None, list[str]]:
+    """Persist an inspiration image (a pin or manual upload).
+
+    Returns (image_rel, thumb_rel, primary_color_hex, palette).
+    """
+    img = _open_normalized(raw)
+    token = secrets.token_hex(8)
+    _flatten(_fit(img, config.MAX_IMAGE_SIDE)).save(
+        config.INSPO_DIR / f"{token}.webp", "WEBP", quality=85, method=6
+    )
+    _flatten(_fit(img, config.THUMB_SIDE)).save(
+        config.INSPO_DIR / f"{token}_thumb.webp", "WEBP", quality=80, method=6
+    )
+    return (
+        f"inspiration/{token}.webp",
+        f"inspiration/{token}_thumb.webp",
+        dominant_color_hex(img),
+        dominant_palette(img, 5),
+    )
+
+
 def _fit(img: Image.Image, max_side: int) -> Image.Image:
     w, h = img.size
     scale = min(1.0, max_side / max(w, h))
@@ -114,6 +139,52 @@ def dominant_color_hex(img: Image.Image) -> str | None:
         return None
     r, g, b = max(counts, key=counts.get)
     return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def dominant_palette(img: Image.Image, n: int = 5) -> list[str]:
+    """Return up to ``n`` dominant colors (hex), most common first.
+
+    Used to summarize an inspiration image into a color palette.
+    """
+    small = _fit(img, 200).convert("RGBA")
+    counts: dict[tuple[int, int, int], int] = {}
+    for r, g, b, a in small.getdata():
+        if a < 40:
+            continue
+        if r > 248 and g > 248 and b > 248:
+            continue  # skip white background
+        key = (r // 32 * 32, g // 32 * 32, b // 32 * 32)
+        counts[key] = counts.get(key, 0) + 1
+    if not counts:
+        return []
+    top = sorted(counts, key=counts.get, reverse=True)[:n]
+    return [f"#{r:02x}{g:02x}{b:02x}" for r, g, b in top]
+
+
+def _color_similarity(a: str, b: str) -> float:
+    """1.0 = identical color, →0 as they diverge (normalized RGB distance)."""
+    ra, ga, ba = hex_to_rgb(a)
+    rb, gb, bb = hex_to_rgb(b)
+    dist = math.sqrt((ra - rb) ** 2 + (ga - gb) ** 2 + (ba - bb) ** 2)
+    return max(0.0, 1.0 - dist / _MAX_RGB_DIST)
+
+
+def palette_match(colors: list[str | None], palette: list[str]) -> float:
+    """How well an outfit's colors *echo* an inspiration palette, in [0, 1].
+
+    For each outfit color, take its closest match in the palette; average those.
+    Neutrals are treated leniently since they slot into any inspiration.
+    """
+    present = [c for c in colors if c]
+    if not present or not palette:
+        return 0.5
+    total = 0.0
+    for c in present:
+        if _is_neutral(c):
+            total += 0.7
+            continue
+        total += max(_color_similarity(c, p) for p in palette)
+    return total / len(present)
 
 
 def hex_to_rgb(value: str) -> tuple[int, int, int]:

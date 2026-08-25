@@ -5,12 +5,21 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, Response, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import analytics, autotag, color_utils, config, models, recommender, schemas
+from . import (
+    analytics,
+    autotag,
+    color_utils,
+    config,
+    models,
+    pinterest,
+    recommender,
+    schemas,
+)
 from .database import get_db, init_db
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend"
@@ -177,6 +186,16 @@ def _log_wear(db: Session, item: models.Item, outfit_id: int | None = None) -> N
 def recommend(req: schemas.RecommendRequest, db: Session = Depends(get_db)):
     items = list(db.scalars(select(models.Item)).all())
     prefs = db.get(models.Preferences, 1)
+
+    target_palette = None
+    if req.inspiration_id is not None:
+        inspo = db.get(models.Inspiration, req.inspiration_id)
+        if inspo is None:
+            raise HTTPException(404, f"Inspiration {req.inspiration_id} not found")
+        target_palette = list(inspo.palette or [])
+        if inspo.primary_color_hex and inspo.primary_color_hex not in target_palette:
+            target_palette.append(inspo.primary_color_hex)
+
     candidates = recommender.generate(
         items,
         prefs,
@@ -186,6 +205,7 @@ def recommend(req: schemas.RecommendRequest, db: Session = Depends(get_db)):
         raining=req.raining,
         require_outerwear=req.require_outerwear,
         include_item_ids=req.include_item_ids,
+        target_palette=target_palette,
         limit=req.limit,
     )
     return [
@@ -314,12 +334,138 @@ def get_meta() -> dict:
         "laundry_statuses": models.LAUNDRY_STATUSES,
         "item_statuses": models.ITEM_STATUSES,
         "autotag_enabled": autotag.tagger.enabled,
+        "pinterest_configured": config.pinterest_configured(),
     }
 
 
 @app.get("/api/health")
 def health() -> dict:
     return {"status": "ok"}
+
+
+# --- inspiration (Pinterest + manual) ----------------------------------------
+@app.get("/api/inspiration", response_model=list[schemas.InspirationOut])
+def list_inspiration(db: Session = Depends(get_db)) -> list[schemas.InspirationOut]:
+    rows = db.scalars(
+        select(models.Inspiration).order_by(models.Inspiration.created_at.desc())
+    ).all()
+    return [schemas.InspirationOut.model_validate(r) for r in rows]
+
+
+@app.post("/api/inspiration/upload", response_model=schemas.InspirationOut, status_code=201)
+async def upload_inspiration(
+    image: UploadFile = File(...),
+    title: str | None = None,
+    db: Session = Depends(get_db),
+) -> schemas.InspirationOut:
+    """Manually add an inspiration image (works without Pinterest configured)."""
+    raw = await image.read()
+    if not raw:
+        raise HTTPException(400, "Empty upload")
+    try:
+        image_rel, thumb_rel, primary, palette = color_utils.save_inspiration_image(raw)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(400, f"Could not process image: {exc}") from exc
+    row = models.Inspiration(
+        source="manual",
+        title=title,
+        image=image_rel,
+        thumbnail=thumb_rel,
+        primary_color_hex=primary,
+        palette=palette,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return schemas.InspirationOut.model_validate(row)
+
+
+@app.delete("/api/inspiration/{inspo_id}")
+def delete_inspiration(inspo_id: int, db: Session = Depends(get_db)) -> Response:
+    row = db.get(models.Inspiration, inspo_id)
+    if row is None:
+        raise HTTPException(404, "Inspiration not found")
+    for rel in (row.image, row.thumbnail):
+        if rel:
+            (config.DATA_DIR / rel).unlink(missing_ok=True)
+    db.delete(row)
+    db.commit()
+    return Response(status_code=204)
+
+
+@app.get("/api/pinterest/status", response_model=schemas.PinterestStatus)
+def pinterest_status(db: Session = Depends(get_db)) -> schemas.PinterestStatus:
+    count = db.query(models.Inspiration).count()
+    return schemas.PinterestStatus(
+        configured=config.pinterest_configured(),
+        connected=pinterest.is_connected(db),
+        inspiration_count=count,
+        redirect_uri=config.PINTEREST_REDIRECT_URI,
+    )
+
+
+@app.get("/api/pinterest/connect")
+def pinterest_connect(db: Session = Depends(get_db)) -> RedirectResponse:
+    try:
+        url = pinterest.build_authorize_url(db)
+    except pinterest.PinterestError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return RedirectResponse(url)
+
+
+@app.get("/api/pinterest/callback", response_class=HTMLResponse)
+def pinterest_callback(
+    db: Session = Depends(get_db),
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+) -> HTMLResponse:
+    if error:
+        return HTMLResponse(_callback_page(f"Pinterest authorization failed: {error}", ok=False))
+    if not code:
+        return HTMLResponse(_callback_page("Missing authorization code.", ok=False))
+    try:
+        pinterest.exchange_code(db, code, state)
+    except pinterest.PinterestError as exc:
+        return HTMLResponse(_callback_page(str(exc), ok=False))
+    return HTMLResponse(_callback_page("Pinterest connected! You can close this tab.", ok=True))
+
+
+def _callback_page(message: str, ok: bool) -> str:
+    color = "#4ade80" if ok else "#ff6b6b"
+    return (
+        f"<!doctype html><html><head><meta charset='utf-8'><title>Pinterest</title>"
+        f"<style>body{{font-family:system-ui;background:#0f1115;color:#e8eaf0;"
+        f"display:flex;min-height:100vh;align-items:center;justify-content:center;text-align:center}}"
+        f".c{{max-width:360px;padding:24px}}.b{{color:{color};font-size:1.1rem;font-weight:600}}</style></head>"
+        f"<body><div class='c'><p class='b'>{message}</p>"
+        f"<p><a style='color:#7c9cff' href='/'>Return to Wardrobe</a></p></div>"
+        f"<script>try{{setTimeout(()=>{{if({str(ok).lower()})location.href='/'}},1500)}}catch(e){{}}</script>"
+        f"</body></html>"
+    )
+
+
+@app.post("/api/pinterest/disconnect")
+def pinterest_disconnect(db: Session = Depends(get_db)) -> dict:
+    pinterest.disconnect(db)
+    return {"connected": False}
+
+
+@app.get("/api/pinterest/boards", response_model=list[schemas.PinterestBoard])
+def pinterest_boards(db: Session = Depends(get_db)) -> list[schemas.PinterestBoard]:
+    try:
+        boards = pinterest.list_boards(db)
+    except pinterest.PinterestError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return [schemas.PinterestBoard(**b) for b in boards]
+
+
+@app.post("/api/pinterest/boards/{board_id}/import")
+def pinterest_import(board_id: str, db: Session = Depends(get_db)) -> dict:
+    try:
+        return pinterest.import_board(db, board_id)
+    except pinterest.PinterestError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 # --- static media + frontend -------------------------------------------------

@@ -35,8 +35,25 @@ AUTOTAG_MODEL = os.environ.get("WARDROBE_AUTOTAG_MODEL", "patrickjohncyh/fashion
 # Model weights are cached here so they persist across container restarts.
 MODEL_DIR = Path(os.environ.get("WARDROBE_MODEL_DIR", str(DATA_DIR / "models"))).resolve()
 
+# --- Optional Pinterest inspiration integration ------------------------------
+# Create a developer app at https://developers.pinterest.com/ to get these.
+# Only needed for the official-API import; manual inspiration upload always works.
+PINTEREST_CLIENT_ID = os.environ.get("PINTEREST_CLIENT_ID", "")
+PINTEREST_CLIENT_SECRET = os.environ.get("PINTEREST_CLIENT_SECRET", "")
+# Must exactly match a redirect URI registered on the Pinterest app.
+PINTEREST_REDIRECT_URI = os.environ.get(
+    "PINTEREST_REDIRECT_URI", "http://localhost:8000/api/pinterest/callback"
+)
+PINTEREST_API_BASE = os.environ.get("PINTEREST_API_BASE", "https://api.pinterest.com/v5")
+PINTEREST_OAUTH_HOST = os.environ.get("PINTEREST_OAUTH_HOST", "https://www.pinterest.com")
+INSPO_DIR = DATA_DIR / "inspiration"
+
+
+def pinterest_configured() -> bool:
+    return bool(PINTEREST_CLIENT_ID and PINTEREST_CLIENT_SECRET)
+
 
 def ensure_dirs() -> None:
     """Create the data directories on startup if they do not yet exist."""
-    for path in (DATA_DIR, IMAGE_DIR, THUMB_DIR):
+    for path in (DATA_DIR, IMAGE_DIR, THUMB_DIR, INSPO_DIR):
         path.mkdir(parents=True, exist_ok=True)

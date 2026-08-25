@@ -88,6 +88,46 @@ class WearLog(Base):
     item: Mapped[Item] = relationship("Item")
 
 
+class Inspiration(Base):
+    """An inspiration image (a Pinterest pin, or a manually uploaded look)."""
+
+    __tablename__ = "inspiration"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source: Mapped[str] = mapped_column(String, default="manual")  # pinterest | manual
+    external_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    board_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    board_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    title: Mapped[str | None] = mapped_column(String, nullable=True)
+    description: Mapped[str | None] = mapped_column(String, nullable=True)
+    link: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    image: Mapped[str | None] = mapped_column(String, nullable=True)
+    thumbnail: Mapped[str | None] = mapped_column(String, nullable=True)
+    primary_color_hex: Mapped[str | None] = mapped_column(String, nullable=True)
+    palette: Mapped[list] = mapped_column(JSON, default=list)  # list of hex strings
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+
+class PinterestAuth(Base):
+    """Singleton (id=1) row holding the OAuth tokens for the connected account.
+
+    Stored locally in SQLite. This is a single-user, self-hosted app, so tokens
+    live on your own machine and never leave it.
+    """
+
+    __tablename__ = "pinterest_auth"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    access_token: Mapped[str | None] = mapped_column(String, nullable=True)
+    refresh_token: Mapped[str | None] = mapped_column(String, nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    scopes: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Transient CSRF state for an in-flight OAuth authorization.
+    pending_state: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
 class Preferences(Base):
     """Singleton (id=1) row holding personal style rules and scoring weights."""
 

@@ -41,6 +41,9 @@ DEFAULT_WEIGHTS = {
 _TOP_BOTTOM = ["top", "bottom", "shoes"]
 _DRESS = ["dress", "shoes"]
 
+# How strongly an inspiration palette pulls the ranking when one is supplied.
+INSPO_WEIGHT = 0.4
+
 
 @dataclass
 class Candidate:
@@ -134,6 +137,7 @@ def _score_outfit(
     prefs: Preferences,
     max_wear: int,
     weights: dict[str, float],
+    target_palette: list[str] | None = None,
 ) -> tuple[float, dict[str, float]]:
     # Occasion match: fraction of items explicitly tagged for the occasion.
     if occasion:
@@ -160,6 +164,13 @@ def _score_outfit(
         "rotation": round(rotation, 3),
     }
     total = sum(weights[k] * breakdown[k] for k in weights)
+
+    # Blend in inspiration-palette matching when a target palette is given.
+    if target_palette:
+        echo = color_utils.palette_match([i.primary_color_hex for i in items], target_palette)
+        breakdown["inspiration"] = round(echo, 3)
+        total = total * (1 - INSPO_WEIGHT) + echo * INSPO_WEIGHT
+
     return round(total, 4), breakdown
 
 
@@ -175,6 +186,7 @@ def _rationale(items: list[Item], breakdown: dict[str, float], occasion: str | N
         "comfort": "comfort",
         "preference": "your style preferences",
         "rotation": "freshens rotation",
+        "inspiration": "matches your inspiration",
     }
     parts.append("strong on " + " and ".join(label[k] for k, _ in top_terms))
     colors = [c for c in (i.primary_color_hex for i in items) if c]
@@ -198,6 +210,7 @@ def generate(
     raining: bool = False,
     require_outerwear: bool | None = None,
     include_item_ids: list[int] | None = None,
+    target_palette: list[str] | None = None,
     limit: int = 8,
 ) -> list[Candidate]:
     include_item_ids = include_item_ids or []
@@ -260,6 +273,7 @@ def generate(
                     prefs=prefs,
                     max_wear=max_wear,
                     weights=weights,
+                    target_palette=target_palette,
                 )
                 candidates.append(
                     Candidate(

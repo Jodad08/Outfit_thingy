@@ -127,6 +127,8 @@ class RecommendRequest(BaseModel):
     limit: int = Field(8, ge=1, le=30)
     # Optionally force certain items to be included (e.g. "style around this top").
     include_item_ids: list[int] = []
+    # Match wardrobe outfits to this inspiration image's color palette.
+    inspiration_id: int | None = None
 
 
 class PreferencesOut(BaseModel):
@@ -137,6 +139,36 @@ class PreferencesOut(BaseModel):
     prioritize_underused: bool = True
     capsule_targets: dict = {}
     weights: dict = {}
+
+
+class InspirationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    source: str
+    title: str | None = None
+    description: str | None = None
+    link: str | None = None
+    board_name: str | None = None
+    image: str | None = None
+    thumbnail: str | None = None
+    primary_color_hex: str | None = None
+    palette: list[str] = []
+    created_at: datetime
+
+
+class PinterestStatus(BaseModel):
+    configured: bool
+    connected: bool
+    inspiration_count: int
+    redirect_uri: str
+
+
+class PinterestBoard(BaseModel):
+    id: str
+    name: str | None = None
+    pin_count: int | None = None
+    privacy: str | None = None
 
 
 class PreferencesUpdate(BaseModel):

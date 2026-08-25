@@ -39,6 +39,7 @@ $$(".tab").forEach((tab) => {
     if (tab.dataset.view === "wardrobe") loadWardrobe();
     if (tab.dataset.view === "saved") loadSaved();
     if (tab.dataset.view === "insights") loadInsights();
+    if (tab.dataset.view === "inspo") loadInspo();
   });
 });
 
@@ -50,6 +51,7 @@ async function init() {
   loadWardrobe();
   wireAddForm();
   wireBuild();
+  wireInspo();
 }
 
 function fillSelect(sel, values, { includeAll = false, allLabel = "All" } = {}) {
@@ -310,7 +312,7 @@ function outfitCard(o, { fromRec = false } = {}) {
   const scorePct = o.score != null ? Math.round(o.score * 100) : null;
   const breakdown = o.breakdown || o.score_breakdown || {};
   const barsHTML = Object.keys(breakdown).length
-    ? `<div class="bars">${["occasion", "weather", "color", "comfort", "preference", "rotation"]
+    ? `<div class="bars">${["occasion", "weather", "color", "comfort", "preference", "rotation", "inspiration"]
         .filter((k) => k in breakdown)
         .map((k) => barRow(k, breakdown[k])).join("")}</div>` : "";
 
@@ -366,6 +368,153 @@ function mkBtn(label, cls, onclick) {
   b.textContent = label;
   b.onclick = onclick;
   return b;
+}
+
+// ---------- INSPIRATION ----------
+function wireInspo() {
+  const fileInput = $("#inspo-file");
+  fileInput.addEventListener("change", async () => {
+    const file = fileInput.files[0];
+    if (!file) return;
+    const status = $("#inspo-status");
+    status.textContent = "Uploading…";
+    try {
+      const fd = new FormData();
+      fd.append("image", file);
+      await api("/inspiration/upload", { method: "POST", body: fd });
+      status.textContent = "Added ✓";
+      fileInput.value = "";
+      loadInspo();
+    } catch (e) {
+      status.textContent = "Error: " + e.message;
+    }
+  });
+}
+
+async function loadInspo() {
+  await renderPinterestPanel();
+  const rows = await api("/inspiration");
+  const grid = $("#inspo-grid");
+  grid.innerHTML = "";
+  $("#inspo-empty").classList.toggle("hidden", rows.length > 0);
+  rows.forEach((r) => grid.appendChild(inspoCard(r)));
+}
+
+function inspoCard(r) {
+  const el = document.createElement("div");
+  el.className = "card";
+  const thumbStyle = r.thumbnail ? `style="background-image:url('${mediaURL(r.thumbnail)}')"` : "";
+  const swatches = (r.palette || [])
+    .map((c) => `<span class="swatch" style="background:${c}"></span>`).join("");
+  el.innerHTML = `
+    <div class="thumb" ${thumbStyle}>${r.thumbnail ? "" : "📌"}</div>
+    <div class="body">
+      <p class="name">${escapeHTML(r.title || (r.source === "pinterest" ? "Pinterest pin" : "Inspiration"))}</p>
+      <div class="meta">${swatches}<span class="badge">${r.source}</span></div>
+    </div>
+    <div class="actions">
+      <button data-act="match">✨ Match closet</button>
+      <button data-act="delete" class="danger">✕</button>
+    </div>`;
+  $('[data-act="match"]', el).onclick = () => matchCloset(r);
+  $('[data-act="delete"]', el).onclick = async () => {
+    if (!confirm("Remove this inspiration?")) return;
+    await api(`/inspiration/${r.id}`, { method: "DELETE" });
+    loadInspo();
+  };
+  return el;
+}
+
+async function matchCloset(r) {
+  const wrap = $("#inspo-match");
+  const results = $("#inspo-match-results");
+  wrap.classList.remove("hidden");
+  results.innerHTML = `<p class="muted">Matching your closet to this palette…</p>`;
+  wrap.scrollIntoView({ behavior: "smooth", block: "start" });
+  try {
+    const outfits = await api("/recommend", {
+      method: "POST",
+      body: JSON.stringify({ inspiration_id: r.id, limit: 6 }),
+    });
+    results.innerHTML = "";
+    if (!outfits.length) {
+      results.innerHTML = `<p class="empty">No complete outfits yet — add more items to your closet (top, bottom &amp; shoes, or a dress &amp; shoes).</p>`;
+      return;
+    }
+    outfits.forEach((o) => results.appendChild(outfitCard(o, { fromRec: true })));
+  } catch (e) {
+    results.innerHTML = `<p class="empty">Error: ${escapeHTML(e.message)}</p>`;
+  }
+}
+
+async function renderPinterestPanel() {
+  const panel = $("#pinterest-panel");
+  let st;
+  try {
+    st = await api("/pinterest/status");
+  } catch (e) {
+    panel.innerHTML = `<p class="muted">Pinterest status unavailable.</p>`;
+    return;
+  }
+  if (!st.configured) {
+    panel.innerHTML = `
+      <h3>📌 Pinterest</h3>
+      <p class="muted">Not configured. To import boards, set <code>PINTEREST_CLIENT_ID</code> and
+      <code>PINTEREST_CLIENT_SECRET</code> (from a Pinterest developer app) and restart.
+      You can still add inspiration photos manually below.</p>`;
+    return;
+  }
+  if (!st.connected) {
+    panel.innerHTML = `
+      <h3>📌 Pinterest</h3>
+      <p class="muted">Configured but not connected.</p>
+      <div class="outfit-actions">
+        <a class="btn primary" href="/api/pinterest/connect">Connect Pinterest</a>
+        <button class="btn" id="pin-refresh">I've connected — refresh</button>
+      </div>`;
+    $("#pin-refresh").onclick = loadInspo;
+    return;
+  }
+  panel.innerHTML = `
+    <h3>📌 Pinterest <span class="badge" style="background:#1a4a2c;color:#7affab;">connected</span></h3>
+    <div class="outfit-actions">
+      <button class="btn primary" id="pin-boards">Load my boards</button>
+      <button class="btn danger" id="pin-disconnect">Disconnect</button>
+    </div>
+    <div id="pin-board-list"></div>`;
+  $("#pin-disconnect").onclick = async () => {
+    await api("/pinterest/disconnect", { method: "POST" });
+    loadInspo();
+  };
+  $("#pin-boards").onclick = async () => {
+    const list = $("#pin-board-list");
+    list.innerHTML = `<p class="muted">Loading boards…</p>`;
+    try {
+      const boards = await api("/pinterest/boards");
+      if (!boards.length) { list.innerHTML = `<p class="muted">No boards found.</p>`; return; }
+      list.innerHTML = "";
+      boards.forEach((b) => {
+        const row = document.createElement("div");
+        row.className = "bar-row";
+        row.style.padding = "8px 0";
+        row.innerHTML = `<span class="label" style="width:auto;flex:1;color:var(--text)">${escapeHTML(b.name || b.id)}
+          ${b.pin_count != null ? `<span class="muted">(${b.pin_count})</span>` : ""}</span>`;
+        const btn = mkBtn("Import", "btn", async () => {
+          btn.textContent = "Importing…"; btn.disabled = true;
+          try {
+            const res = await api(`/pinterest/boards/${b.id}/import`, { method: "POST" });
+            toast(`Imported ${res.imported} pins (${res.skipped} skipped)`);
+            loadInspo();
+          } catch (e) { toast("Error: " + e.message); btn.textContent = "Import"; btn.disabled = false; }
+        });
+        btn.style.flex = "0 0 auto";
+        row.appendChild(btn);
+        list.appendChild(row);
+      });
+    } catch (e) {
+      list.innerHTML = `<p class="empty">Error: ${escapeHTML(e.message)}</p>`;
+    }
+  };
 }
 
 // ---------- SAVED ----------
