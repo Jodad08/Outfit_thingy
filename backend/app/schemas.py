@@ -37,6 +37,8 @@ class AnalyzeResult(BaseModel):
     thumbnail: str
     primary_color_hex: str | None = None
     color_name: str | None = None
+    # Present only when AI auto-tagging is enabled; all fields are suggestions.
+    suggestions: dict | None = None
 
 
 class ItemUpdate(BaseModel):

@@ -101,6 +101,51 @@ uvicorn under a dedicated `wardrobe` user with data in `/var/lib/wardrobe`.
 
 ---
 
+## Optional: AI auto-tagging (self-hosted, CPU)
+
+You can have the app **suggest** a garment's category, subcategory, pattern,
+formality, and seasons straight from the photo — so adding an item is mostly
+confirming pre-filled fields instead of typing them.
+
+- Uses **Fashion-CLIP**, a zero-shot vision model, running **locally on CPU**
+  (no GPU, no cloud, no API keys). Your photos never leave the machine.
+- It only ever **suggests** — every field stays editable, and the model never
+  writes to the database directly.
+- It's fully optional: the base app has zero ML dependencies. Enabling it adds
+  `torch` (CPU) + `transformers`, and the model weights (~600 MB) download once
+  on first use and are cached on the data volume.
+
+**Enable with Docker:**
+
+```bash
+ENABLE_VISION=true WARDROBE_ENABLE_AUTOTAG=1 docker compose up --build -d
+```
+
+(`ENABLE_VISION` bakes the deps into the image at build time;
+`WARDROBE_ENABLE_AUTOTAG=1` turns tagging on at runtime.)
+
+**Enable without Docker:**
+
+```bash
+pip install -r backend/requirements.txt -r backend/requirements-vision.txt
+export WARDROBE_ENABLE_AUTOTAG=1
+uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+```
+
+If the model can't load for any reason, the app logs a warning and silently
+falls back to manual entry — intake never breaks.
+
+## Remote access (optional)
+
+This is a single-user, self-hosted app, so keep it on your VM rather than moving
+it to a serverless platform. To reach it away from home **without exposing a
+port or giving up local hosting**, put a tunnel in front of it:
+
+- **Cloudflare Tunnel** (`cloudflared`) — free TLS, no open ports, optional
+  Cloudflare Access login. The app still runs on your VM; Cloudflare is just a
+  secure front door.
+- **Tailscale** — private access from your own devices, zero public exposure.
+
 ## Configuration
 
 All settings are environment variables (all optional):
@@ -112,6 +157,9 @@ All settings are environment variables (all optional):
 | `WARDROBE_MAX_IMAGE_SIDE` | `1280` | Max stored image dimension (px) |
 | `WARDROBE_THUMB_SIDE` | `400` | Thumbnail dimension (px) |
 | `WARDROBE_MAX_COMBOS` | `4000` | Cap on outfit combinations scored per request |
+| `WARDROBE_ENABLE_AUTOTAG` | `0` | Turn on AI auto-tagging (needs vision deps installed) |
+| `WARDROBE_AUTOTAG_MODEL` | `patrickjohncyh/fashion-clip` | Zero-shot model to use |
+| `WARDROBE_MODEL_DIR` | `<data>/models` | Where model weights are cached |
 
 ## Tech stack
 

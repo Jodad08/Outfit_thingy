@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import analytics, color_utils, config, models, recommender, schemas
+from . import analytics, autotag, color_utils, config, models, recommender, schemas
 from .database import get_db, init_db
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend"
@@ -56,8 +56,28 @@ async def analyze_image(image: UploadFile = File(...)) -> schemas.AnalyzeResult:
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(400, f"Could not process image: {exc}") from exc
     name = color_utils.nearest_color_name(primary) if primary else None
+
+    # Optional AI auto-tagging (zero-shot Fashion-CLIP). Suggestions only.
+    suggestions = None
+    if autotag.tagger.enabled:
+        import io
+
+        from PIL import Image
+
+        try:
+            pil = Image.open(io.BytesIO(raw))
+            result = autotag.tagger.suggest(pil)
+            if result is not None:
+                suggestions = result.as_dict()
+        except Exception:  # noqa: BLE001
+            suggestions = None  # never let tagging break intake
+
     return schemas.AnalyzeResult(
-        image=image_path, thumbnail=thumb_path, primary_color_hex=primary, color_name=name
+        image=image_path,
+        thumbnail=thumb_path,
+        primary_color_hex=primary,
+        color_name=name,
+        suggestions=suggestions,
     )
 
 
@@ -293,6 +313,7 @@ def get_meta() -> dict:
         "occasions": models.OCCASIONS,
         "laundry_statuses": models.LAUNDRY_STATUSES,
         "item_statuses": models.ITEM_STATUSES,
+        "autotag_enabled": autotag.tagger.enabled,
     }
 
 

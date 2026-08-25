@@ -168,7 +168,12 @@ function wireAddForm() {
         $('[name="primary_color_hex"]').value = result.primary_color_hex;
         $("#color-name").textContent = result.color_name ? `detected: ${result.color_name}` : "";
       }
-      status.textContent = "Photo ready ✓";
+      if (result.suggestions) {
+        applySuggestions(result.suggestions);
+        status.textContent = "✨ AI pre-filled fields below — please confirm";
+      } else {
+        status.textContent = "Photo ready ✓";
+      }
     } catch (e) {
       status.textContent = "Analysis failed: " + e.message;
     }
@@ -220,6 +225,23 @@ function wireAddForm() {
   });
 
   $("#add-reset").addEventListener("click", resetAddForm);
+}
+
+// Pre-fill the add-item form from AI suggestions. Everything stays editable.
+function applySuggestions(s) {
+  const f = $("#item-form");
+  if (s.category && META.categories.includes(s.category)) f.category.value = s.category;
+  if (s.subcategory && !f.subcategory.value) f.subcategory.value = s.subcategory;
+  if (s.formality_score) {
+    f.formality_score.value = s.formality_score;
+    $("#formality-out").textContent = s.formality_score;
+  }
+  if (Array.isArray(s.seasons)) {
+    $$("#seasons-chips .chip").forEach((chip) => {
+      chip.classList.toggle("on", s.seasons.includes(chip.dataset.value));
+    });
+  }
+  if (s.notes && !f.notes.value) f.notes.value = s.notes;
 }
 
 function resetAddForm() {

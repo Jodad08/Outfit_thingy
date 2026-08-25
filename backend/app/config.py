@@ -24,6 +24,17 @@ THUMB_SIDE = int(os.environ.get("WARDROBE_THUMB_SIDE", "400"))
 # Cap on how many outfit combinations the recommender will score per request.
 MAX_COMBINATIONS = int(os.environ.get("WARDROBE_MAX_COMBOS", "4000"))
 
+# --- Optional AI auto-tagging (Fashion-CLIP, CPU) ----------------------------
+# When enabled, uploaded photos are also run through a self-hosted zero-shot
+# classifier to *suggest* category / subcategory / pattern / formality / season.
+# All suggestions remain editable; the model never writes to the DB directly.
+# Requires the extra deps in backend/requirements-vision.txt.
+_TRUTHY = {"1", "true", "yes", "on"}
+ENABLE_AUTOTAG = os.environ.get("WARDROBE_ENABLE_AUTOTAG", "0").lower() in _TRUTHY
+AUTOTAG_MODEL = os.environ.get("WARDROBE_AUTOTAG_MODEL", "patrickjohncyh/fashion-clip")
+# Model weights are cached here so they persist across container restarts.
+MODEL_DIR = Path(os.environ.get("WARDROBE_MODEL_DIR", str(DATA_DIR / "models"))).resolve()
+
 
 def ensure_dirs() -> None:
     """Create the data directories on startup if they do not yet exist."""

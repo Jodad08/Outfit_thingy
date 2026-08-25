@@ -12,8 +12,17 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends libwebp7 \
     && rm -rf /var/lib/apt/lists/*
 
+# Set ENABLE_VISION=true at build time to bake in the optional Fashion-CLIP
+# auto-tagging dependencies (torch CPU + transformers). Default off keeps the
+# image small.
+ARG ENABLE_VISION=false
+
 COPY backend/requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+COPY backend/requirements-vision.txt ./requirements-vision.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+    && if [ "$ENABLE_VISION" = "true" ]; then \
+         pip install --no-cache-dir -r requirements-vision.txt; \
+       fi
 
 COPY backend ./backend
 COPY frontend ./frontend
