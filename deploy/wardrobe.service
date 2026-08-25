@@ -1,0 +1,36 @@
+# systemd unit for running the wardrobe assistant directly on an Ubuntu
+# (e.g. Proxmox) VM without Docker.
+#
+# Install:
+#   sudo useradd -r -s /usr/sbin/nologin wardrobe        # service account
+#   sudo mkdir -p /opt/wardrobe /var/lib/wardrobe
+#   sudo cp -r . /opt/wardrobe                            # copy the repo
+#   cd /opt/wardrobe && python3 -m venv .venv
+#   sudo /opt/wardrobe/.venv/bin/pip install -r backend/requirements.txt
+#   sudo chown -R wardrobe:wardrobe /opt/wardrobe /var/lib/wardrobe
+#   sudo cp deploy/wardrobe.service /etc/systemd/system/wardrobe.service
+#   sudo systemctl daemon-reload && sudo systemctl enable --now wardrobe
+#
+[Unit]
+Description=Wardrobe Fashion Assistant
+After=network.target
+
+[Service]
+Type=simple
+User=wardrobe
+Group=wardrobe
+WorkingDirectory=/opt/wardrobe
+Environment=WARDROBE_DATA_DIR=/var/lib/wardrobe
+ExecStart=/opt/wardrobe/.venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+Restart=on-failure
+RestartSec=3
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/wardrobe
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

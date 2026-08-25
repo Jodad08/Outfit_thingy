@@ -1,0 +1,10 @@
+.git
+.gitignore
+data/
+**/__pycache__/
+*.pyc
+.venv/
+venv/
+*.db
+scratchpad/
+README.md

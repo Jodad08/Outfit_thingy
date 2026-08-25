@@ -1,0 +1,9 @@
+# Optional dependencies for AI auto-tagging (Fashion-CLIP, CPU-only).
+# Install on top of requirements.txt to enable the /api/analyze suggestions:
+#   pip install -r backend/requirements.txt -r backend/requirements-vision.txt
+#
+# The CPU wheel index keeps torch small (no CUDA). Weights (~600MB) download
+# on first use and are cached under WARDROBE_MODEL_DIR.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.5.1+cpu
+transformers==4.48.0

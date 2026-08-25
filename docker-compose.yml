@@ -1,0 +1,22 @@
+services:
+  wardrobe:
+    build:
+      context: .
+      args:
+        # Set ENABLE_VISION=true to bake in the Fashion-CLIP auto-tagging deps.
+        ENABLE_VISION: ${ENABLE_VISION:-false}
+    image: wardrobe-assistant:latest
+    container_name: wardrobe-assistant
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist the SQLite database, garment images, and model cache on the host.
+      - wardrobe-data:/data
+    environment:
+      - WARDROBE_DATA_DIR=/data
+      # Set to 1 to turn on AI auto-tagging at runtime (needs ENABLE_VISION build).
+      - WARDROBE_ENABLE_AUTOTAG=${WARDROBE_ENABLE_AUTOTAG:-0}
+    restart: unless-stopped
+
+volumes:
+  wardrobe-data:
