@@ -5,5 +5,5 @@
 # The CPU wheel index keeps torch small (no CUDA). Weights (~600MB) download
 # on first use and are cached under WARDROBE_MODEL_DIR.
 --extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.5.1+cpu
-transformers==4.48.0
+torch==2.15.0+cpu
+transformers==5.23.0
